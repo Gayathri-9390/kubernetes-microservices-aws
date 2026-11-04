@@ -2,6 +2,10 @@
 pipeline {
     agent any
 
+    environment {
+        KUBECONFIG = '/var/lib/jenkins/.kube/config'
+    }
+
     stages {
         stage('Checkout') {
             steps {
@@ -13,39 +17,50 @@ pipeline {
         stage('Validate Project') {
             steps {
                 sh '''
-                    echo "Validating project..."
                     test -f user-service/app.py
                     test -f product-service/app.py
                     test -f order-service/app.py
-                    test -f k8s/user-deployment.yaml
-                    test -f k8s/product-deployment.yaml
-                    test -f k8s/order-deployment.yaml
-                    echo "Validation successful!"
+                    echo "Project validation successful!"
                 '''
             }
         }
 
-        stage('Build User Service') {
+        stage('Build Docker Images') {
             steps {
-                sh 'docker build -t user-service:v2 ./user-service'
+                sh '''
+                    docker build -t user-service:v2 ./user-service
+                    docker build -t product-service:v2 ./product-service
+                    docker build -t order-service:v2 ./order-service
+                '''
             }
         }
 
-        stage('Build Product Service') {
+        stage('Deploy to Kubernetes') {
             steps {
-                sh 'docker build -t product-service:v2 ./product-service'
+                sh '''
+                    kubectl set image deployment/user-deployment \
+                      user-container=user-service:v2
+
+                    kubectl set image deployment/product-deployment \
+                      product-container=product-service:v2
+
+                    kubectl set image deployment/order-deployment \
+                      order-container=order-service:v2
+
+                    kubectl rollout status deployment/user-deployment
+                    kubectl rollout status deployment/product-deployment
+                    kubectl rollout status deployment/order-deployment
+                '''
             }
         }
 
-        stage('Build Order Service') {
+        stage('Verify Deployment') {
             steps {
-                sh 'docker build -t order-service:v2 ./order-service'
-            }
-        }
-
-        stage('Verify Docker Images') {
-            steps {
-                sh 'docker images'
+                sh '''
+                    kubectl get deployments
+                    kubectl get pods
+                    kubectl get services
+                '''
             }
         }
     }
